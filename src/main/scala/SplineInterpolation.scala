@@ -18,10 +18,12 @@ object SplineInterpolation {
 
   val dds : (Tuple5, Double) => Double = (c : Tuple5, t : Double) => c._4 + c._5*(t-c._1)
 
+  val S = List(s, ds, dds)
+
   //val epsilon = 0.001
 
-  val testValues : List[(Double => Double,Double => Double,Double => Double, Double, Double)] = List(
-    ((t : Double) => sin(t), (t : Double) => cos(t), (t : Double) => -sin(t), -PI, PI))//,
+  val testValues : List[(Double => Double,Double => Double,Double => Double, Double, Double, String)] = List(
+    ((t : Double) => sin(t), (t : Double) => cos(t), (t : Double) => -sin(t), -PI, PI, "sin"))//,
 //    ((t : Double) => cos(t), (t : Double) => -sin(t), (t : Double) => -cos(t), -PI, PI)),
 //    ((t : Double) => 1d/3*abs(t)*sin(t)*sin(t), -PI, PI),
 //    ((t : Double) => sqrt(t), 1, 2),
@@ -33,48 +35,55 @@ object SplineInterpolation {
     println("Interpolation Typ (a) - natuerlicher Spline\n")
 
     val in = testValues(0)
-    val E = getE(0,in._5-in._4, in)
+
+    val a = interpolationAC(in._1, in._4, in._5, PI/2)
+    val E2 = getE(in._1, s, a, in._4, in._5, PI/2)
+
+    println(E2)
+
+
+
+
+
+    val E1 = (0 to 3 toList) map { i => (in._5-in._4) / pow(2, i) } map
+      { h => {/*println(h);*/(getE(in._1, s, interpolationAC(in._1, in._4, in._5, h), in._4, in._5, h), h) }}
+    println(E1)
+
+    val E = List((in._1,s), (in._2,ds), (in._3,dds)) map { case (f,g) => (0 to 4 toList) map { i =>
+      (in._5-in._4) / pow(2, i) } map { h => (getE(f, g, interpolationAC(in._1, in._4, in._5, h), in._4, in._5, h), h) }}
+
+
+    println(E)
+    println
+
+   println(s"f(t) = ${in._6}(t) => p_1 = ${getp(E(0))}   p_2 = ${getp(E(1))}   p_3 = ${getp(E(2))}")
+
 
   }
 
 
-  private def interpolationA(f : Double => Double, a : Double, b : Double, h : Double) : List[Tuple5] = {
+  private def interpolationAC(f : Double => Double, a : Double, b : Double, h : Double, c_0 : Double = 0d, c_n : Double = 0d) : List[Tuple5] = {
 
     val values = (0 to ((b-a)/h).round.toInt).toList map { i => (i, a+i*h, f(a+i*h)) }
     val p = values.map{x => (x._1, x._3)}.toMap
 
     val coeffList = List.fill(p.size-2)(1d/6,2d/3,1d/6) zip ((1 to p.size-2 toList) map { i => (p(i-1)+p(i+1)-2*p(i))/h })
 
-    values zip (0d :: thomasAlgorithm(coeffList map flatten2)) :+ 0d map flatten1 sliding(2) map { case c :: n :: Nil =>
-      (c._2, c._3, (n._3-c._3)/h-h*(2*c._4+n._4)/6, c._4, (n._4-c._4)/h)} toList
+    values zip (c_0 :: thomasAlgorithm(coeffList map flatten2)) :+ c_n map flatten1 sliding 2 map { case c :: n :: Nil =>
+      (c._2, c._3, (n._3-c._3) / h - h * (2 * c._4 + n._4) / 6, c._4, (n._4 - c._4) / h) } toList
   }
 
-  private def getp(E : List[(Double, Double)]) : List[(Double, Double, Double)] = {
-//
-//    def getNext(E : List[(Double, Double)], p : List[(Double, Double, Double)] = List()) : List[(Double, Double, Double)] = {
-//      if (! E.isEmpty) getNext(E.tail, p ::: E.tail.map { e => (E.head._2, e._2, (log(E.head._1)-log(e._1))/(log(E.head._2)-log(e._2))) })
-//      else p
-//    }
+  private def getp(E : List[(Double, Double)]) : Double ={
 
-    (0 until E.length foldLeft List[(Double, Double, Double)]()) { (p, i) => p ::: (E.drop(i + 1) map
-      { e => (E(i)._2, e._2, (log(E(i)._1) - log(e._1)) / (log(E(i)._2) - log(e._2))) })}
-  }
+    println((0 until E.length foldLeft List[Double]()) { (p, i) => p ::: (E.drop(i + 1) map { e =>
+      (log(E(i)._1) - log(e._1)) / (log(E(i)._2) - log(e._2)) })})
 
-  private def getE(i : Int, h : Double, in : (Double => Double,Double => Double,Double => Double, Double, Double),
-           E : List[(Double, Double, Double)] = List()) : List[(Double, Double, Double)] = {
+    ((0 until E.length foldLeft List[Double]()) { (p, i) => p ::: (E.drop(i + 1) map { e =>
+      (log(E(i)._1) - log(e._1)) / (log(E(i)._2) - log(e._2)) })} reduce (_ + _)) / ((E.length * (E.length - 1)) / 2)}
 
-    def getNext(f : Double => Double, df : Double => Double, ddf : Double => Double,
-               a : Double, b : Double, h : Double, coeffs : List[Tuple5]) : (Double, Double, Double) = {
+  def getE(f : Double => Double, g : (Tuple5, Double) => Double, coeffs : List[Tuple5], a : Double, b : Double, h : Double) : Double =
 
-      val tau = (a to b by h/10 toList) map { tau => (tau, findInterval(coeffs map (_._1), tau)) }
-
-      List((s,f), (ds,df), (dds,ddf)) map {case (g, f) => (tau map (t =>abs(g(coeffs(t._2),t._1)-f(t._1)))) reduce (_ max _) } match {
-        case a :: b :: c :: Nil => (a, b, c)
-      }
-    }
-    if (i==10) E
-    else getE(i+1, h/2, in, E :+ getNext(in._1, in._2, in._3, in._4, in._5, h, interpolationA(in._1, in._4, in._5, h)))
-  }
+    (a to b by h/10 toList) map { tau => abs(g(coeffs(findInterval(coeffs map (_._1), tau)),tau) - f(tau)) } reduce (_ max _)
 
   private def thomasAlgorithm(A : List[(Double,Double,Double,Double)]) : List[Double] = {
 
